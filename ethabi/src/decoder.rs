@@ -204,6 +204,22 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 
 			Ok(result)
 		}
+		ParamType::Tuple(ref params) => {
+			let mut tokens = vec![];
+			let mut new_offset = offset;
+			for param in params.iter() {
+				let res = decode_param(param, &slices, new_offset)?;
+				new_offset = res.new_offset;
+				tokens.push(res.token);
+			}
+
+			let result = DecodeResult {
+				token: Token::Tuple(tokens),
+				new_offset,
+			};
+
+			Ok(result)
+		},
 	}
 }
 
@@ -493,22 +509,33 @@ mod tests {
 
 	#[test]
 	fn decode_from_empty_byte_slice() {
-        // these can NOT be decoded from empty byte slice
-        assert!(decode(&[ParamType::Address], &[]).is_err());
-        assert!(decode(&[ParamType::Bytes], &[]).is_err());
-        assert!(decode(&[ParamType::Int(0)], &[]).is_err());
-        assert!(decode(&[ParamType::Int(1)], &[]).is_err());
-        assert!(decode(&[ParamType::Int(0)], &[]).is_err());
-        assert!(decode(&[ParamType::Int(1)], &[]).is_err());
-        assert!(decode(&[ParamType::Bool], &[]).is_err());
-        assert!(decode(&[ParamType::String], &[]).is_err());
-        assert!(decode(&[ParamType::Array(Box::new(ParamType::Bool))], &[]).is_err());
-        assert!(decode(&[ParamType::FixedBytes(1)], &[]).is_err());
-        assert!(decode(&[ParamType::FixedArray(Box::new(ParamType::Bool), 1)], &[]).is_err());
+		// these can NOT be decoded from empty byte slice
+		assert!(decode(&[ParamType::Address], &[]).is_err());
+		assert!(decode(&[ParamType::Bytes], &[]).is_err());
+		assert!(decode(&[ParamType::Int(0)], &[]).is_err());
+		assert!(decode(&[ParamType::Int(1)], &[]).is_err());
+		assert!(decode(&[ParamType::Int(0)], &[]).is_err());
+		assert!(decode(&[ParamType::Int(1)], &[]).is_err());
+		assert!(decode(&[ParamType::Bool], &[]).is_err());
+		assert!(decode(&[ParamType::String], &[]).is_err());
+		assert!(decode(&[ParamType::Array(Box::new(ParamType::Bool))], &[]).is_err());
+		assert!(decode(&[ParamType::FixedBytes(1)], &[]).is_err());
+		assert!(decode(&[ParamType::FixedArray(Box::new(ParamType::Bool), 1)], &[]).is_err());
 
-        // these are the only ones that can be decoded from empty byte slice
-        assert!(decode(&[ParamType::FixedBytes(0)], &[]).is_ok());
-        assert!(decode(&[ParamType::FixedArray(Box::new(ParamType::Bool), 0)], &[]).is_ok());
+		// these are the only ones that can be decoded from empty byte slice
+		assert!(decode(&[ParamType::FixedBytes(0)], &[]).is_ok());
+		assert!(decode(&[ParamType::FixedArray(Box::new(ParamType::Bool), 0)], &[]).is_ok());
+	}
+	fn decode_tuple() {
+		let encoded = hex!("
+			0000000000000000000000001111111111111111111111111111111111111111
+			000000000000000000000000000000000000000000000000000000000000250f
+		");
+		let address = Token::Address([0x11u8; 20].into());
+		let uint = Token::Uint(9487.into());
+		let expected = vec![Token::Tuple(vec![address, uint])];
+		let decoded = decode(&[ParamType::Tuple(vec![ParamType::Address, ParamType::Uint(256)])], &encoded).unwrap();
+		assert_eq!(decoded, expected);
 	}
 }
 
