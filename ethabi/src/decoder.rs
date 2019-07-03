@@ -526,6 +526,8 @@ mod tests {
 		assert!(decode(&[ParamType::FixedBytes(0)], &[]).is_ok());
 		assert!(decode(&[ParamType::FixedArray(Box::new(ParamType::Bool), 0)], &[]).is_ok());
 	}
+
+	#[test]
 	fn decode_tuple() {
 		let encoded = hex!("
 			0000000000000000000000001111111111111111111111111111111111111111

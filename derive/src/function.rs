@@ -270,12 +270,14 @@ mod tests {
 				ethabi::Param {
 					name: "foo".into(),
 					kind: ethabi::ParamType::Address,
+					components: vec![],
 				}
 			],
 			outputs: vec![
 				ethabi::Param {
 					name: "bar".into(),
 					kind: ethabi::ParamType::Uint(256),
+					components: vec![],
 				}
 			],
 			constant: false,
@@ -293,11 +295,13 @@ mod tests {
 						name: "hello".into(),
 						inputs: vec![ethabi::Param {
 							name: "foo".to_owned(),
-							kind: ethabi::ParamType::Address
+							kind: ethabi::ParamType::Address,
+							components: vec![],
 						}],
 						outputs: vec![ethabi::Param {
 							name: "bar".to_owned(),
-							kind: ethabi::ParamType::Uint(256usize)
+							kind: ethabi::ParamType::Uint(256usize),
+							components: vec![],
 						}],
 						constant: false,
 					}
@@ -347,20 +351,24 @@ mod tests {
 				ethabi::Param {
 					name: "foo".into(),
 					kind: ethabi::ParamType::FixedArray(Box::new(ethabi::ParamType::Address), 2),
+					components: vec![],
 				},
 				ethabi::Param {
 					name: "bar".into(),
 					kind: ethabi::ParamType::Array(Box::new(ethabi::ParamType::Uint(256))),
+					components: vec![],
 				}
 			],
 			outputs: vec![
 				ethabi::Param {
 					name: "".into(),
 					kind: ethabi::ParamType::Uint(256),
+					components: vec![],
 				},
 				ethabi::Param {
 					name: "".into(),
 					kind: ethabi::ParamType::String,
+					components: vec![],
 				}
 			],
 			constant: false,
