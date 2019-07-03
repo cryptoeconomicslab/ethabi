@@ -76,6 +76,7 @@ impl Reader {
 			"string" => ParamType::String,
 			"int" => ParamType::Int(256),
 			"uint" => ParamType::Uint(256),
+			"tuple" => ParamType::Tuple(vec![]),
 			s if s.starts_with("int") => {
 				let len = try!(usize::from_str_radix(&s[3..], 10));
 				ParamType::Int(len)

@@ -110,6 +110,7 @@ mod tests {
 				ethabi::Param {
 					name: "foo".into(),
 					kind: ethabi::ParamType::Uint(256),
+					components: vec![],
 				}
 			],
 		};

@@ -9,6 +9,9 @@ pub struct Param {
 	/// Param type.
 	#[serde(rename="type")]
 	pub kind: ParamType,
+	/// Components type for tuple.
+	#[serde(default)]
+	pub components: Vec<Param>,
 }
 
 #[cfg(test)]
@@ -28,6 +31,35 @@ mod tests {
 		assert_eq!(deserialized, Param {
 			name: "foo".to_owned(),
 			kind: ParamType::Address,
+			components: vec![] 
+		});
+	}
+
+	#[test]
+	fn param_deserialization_with_components() {
+		let s = r#"{
+			"name": "foo",
+			"type": "tuple",
+			"components": [
+				{
+					"name": "bar",
+					"type": "uint256"
+				}
+			]
+		}"#;
+
+		let deserialized: Param = serde_json::from_str(s).unwrap();
+
+		assert_eq!(deserialized, Param {
+			name: "foo".to_owned(),
+			kind: ParamType::Tuple(vec![]),
+			components: vec![
+				Param {
+					name: "bar".to_owned(),
+					kind: ParamType::Uint(256),
+					components: vec![]
+				}
+			]
 		});
 	}
 }

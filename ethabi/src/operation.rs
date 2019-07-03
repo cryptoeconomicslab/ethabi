@@ -36,10 +36,12 @@ impl<'a> Deserialize<'a> for Operation {
 
 		let result = match s {
 			"constructor" => from_value(v).map(Operation::Constructor),
-			"function" => from_value(v).map(|mut f: Function| {
-				sanitize_name(&mut f.name);
-				Operation::Function(f)
-			}),
+			"function" => { 
+				from_value(v).map(|mut f: Function| {
+					sanitize_name(&mut f.name);
+					Operation::Function(f)
+				})
+			},
 			"event" => from_value(v).map(|mut e: Event| {
 				sanitize_name(&mut e.name);
 				Operation::Event(e)
@@ -77,6 +79,7 @@ mod tests {
 				Param {
 					name: "a".to_owned(),
 					kind: ParamType::Address,
+					components: vec![]
 				}
 			],
 			outputs: vec![],
@@ -141,4 +144,62 @@ mod tests {
 		test_sanitize_event_name("()", "");
 		test_sanitize_event_name("", "");
 	}
+
+	#[test]
+	fn deserialize_operation_with_tuple_input() {
+		let s = r#"{
+			"type":"function",
+			"inputs": [
+				{
+					"components": [
+						{
+							"name": "start",
+							"type": "uint256"
+						},
+						{
+							"name": "end",
+							"type": "uint256"
+						}
+					],
+					"name": "range",
+					"type": "tuple"
+				}
+			],
+			"name":"foo",
+			"outputs": []
+		}"#;
+
+		let deserialized: Operation = match serde_json::from_str(s) {
+			Ok(d) => d,
+			Err(e) => {
+				println!("{:}", e);
+				panic!("ERROR");
+			}
+		};
+
+		assert_eq!(deserialized, Operation::Function(Function {
+			name: "foo".to_owned(),
+			inputs: vec![
+				Param {
+					name: "range".to_owned(),
+					kind: ParamType::Tuple(vec![]),
+					components: vec![
+						Param {
+							name: "start".to_owned(),
+							kind: ParamType::Uint(256),
+							components: vec![],
+						},
+						Param {
+							name: "end".to_owned(),
+							kind: ParamType::Uint(256),
+							components: vec![],
+						},
+					]
+				}
+			],
+			outputs: vec![],
+			constant: false,
+		}));
+	}
+	
 }
