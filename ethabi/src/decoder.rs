@@ -539,5 +539,35 @@ mod tests {
 		let decoded = decode(&[ParamType::Tuple(vec![ParamType::Address, ParamType::Uint(256)])], &encoded).unwrap();
 		assert_eq!(decoded, expected);
 	}
-}
 
+	#[test]
+	fn decode_tuple_bytes() {
+		let encoded = hex!(
+			"
+			0000000000000000000000001111111111111111111111111111111111111111
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000000
+			0000000000000000000000000000000000000000000000000000000000000064
+			0000000000000000000000000000000000000000000000000000000000000004
+			6461746100000000000000000000000000000000000000000000000000000000
+		"
+		);
+		let address = Token::Address([0x11u8; 20].into());
+		let bytes = Token::Bytes(b"data"[..].into());
+		let uint1 = Token::Uint(0.into());
+		let uint2 = Token::Uint(100.into());
+		let expected = vec![
+			Token::Tuple(vec![address, bytes]),
+			Token::Tuple(vec![uint1, uint2]),
+		];
+		let decoded = decode(
+			&[
+				ParamType::Tuple(vec![ParamType::Address, ParamType::Bytes]),
+				ParamType::Tuple(vec![ParamType::Uint(256), ParamType::Uint(256)]),
+			],
+			&encoded,
+		)
+		.unwrap();
+		assert_eq!(decoded, expected);
+	}
+}
