@@ -125,9 +125,9 @@ impl Token {
 				} else {
 					false
 				},
-			Token::Tuple(_) =>
-				if let ParamType::Tuple(_) = *param_type {
-					true
+			Token::Tuple(ref tokens) =>
+				if let ParamType::Tuple(ref param_types) = *param_type {
+					param_types.len() == tokens.len() && tokens.iter().zip(param_types).all(|(t, param_type)| t.type_check(param_type))
 				} else {
 					false
 				},
