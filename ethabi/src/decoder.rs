@@ -44,7 +44,7 @@ pub fn decode(types: &[ParamType], data: &[u8]) -> Result<Vec<Token>, Error> {
 	let mut tokens = vec![];
 	let mut offset = 0;
 	for param in types {
-		let res = decode_param(param, &slices, offset).chain_err(|| format!("Cannot decode {}", param))?;
+		let res = decode_param(param, &slices, offset, 0).chain_err(|| format!("Cannot decode {}", param))?;
 		offset = res.new_offset;
 		tokens.push(res.token);
 	}
@@ -77,7 +77,7 @@ fn take_bytes(slices: &[[u8; 32]], position: usize, len: usize) -> Result<BytesT
 	Ok(taken)
 }
 
-fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result<DecodeResult, Error> {
+fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize, frame: usize) -> Result<DecodeResult, Error> {
 	match *param {
 		ParamType::Address => {
 			let slice = try!(peek(slices, offset));
@@ -135,7 +135,7 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 		},
 		ParamType::Bytes => {
 			let offset_slice = try!(peek(slices, offset));
-			let len_offset = (try!(as_u32(offset_slice)) / 32) as usize;
+			let len_offset = ((try!(as_u32(offset_slice)) / 32) as usize) + frame;
 
 			let len_slice = try!(peek(slices, len_offset));
 			let len = try!(as_u32(len_slice)) as usize;
@@ -176,7 +176,7 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 			let mut new_offset = len_offset + 1;
 
 			for _ in 0..len {
-				let res = try!(decode_param(t, &slices, new_offset));
+				let res = try!(decode_param(t, &slices, new_offset, 0));
 				new_offset = res.new_offset;
 				tokens.push(res.token);
 			}
@@ -192,7 +192,7 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 			let mut tokens = vec![];
 			let mut new_offset = offset;
 			for _ in 0..len {
-				let res = try!(decode_param(t, &slices, new_offset));
+				let res = try!(decode_param(t, &slices, new_offset, 0));
 				new_offset = res.new_offset;
 				tokens.push(res.token);
 			}
@@ -208,7 +208,7 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 			let mut tokens = vec![];
 			let mut new_offset = offset;
 			for param in params.iter() {
-				let res = decode_param(param, &slices, new_offset)?;
+				let res = decode_param(param, &slices, new_offset, new_offset + 1)?;
 				new_offset = res.new_offset;
 				tokens.push(res.token);
 			}
@@ -570,4 +570,55 @@ mod tests {
 		.unwrap();
 		assert_eq!(decoded, expected);
 	}
+
+	#[test]
+	fn decode_tuple3() {
+		let encoded = hex!(
+			"
+			0000000000000000000000001111111111111111111111111111111111111111
+			0000000000000000000000000000000000000000000000000000000000000080
+			0000000000000000000000000000000000000000000000000000000000000000
+			0000000000000000000000000000000000000000000000000000000000002710
+			00000000000000000000000000000000000000000000000000000000000000e0
+			0000000000000000000000000000000000000000000000000000000000000060
+			000000000000000000000000000000000000000000000000000000000000000a
+			0000000000000000000000000000000000000000000000000000000000000014
+			000000000000000000000000ecfcab0a285d3380e488a39b4bb21e777f8a4eac
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000020
+			000000000000000000000000f17f52151ebef6c7334fad080c5704d77216b732
+		"
+		);
+		let parameter = hex!(
+			"
+			0000000000000000000000000000000000000000000000000000000000000060
+			000000000000000000000000000000000000000000000000000000000000000a
+			0000000000000000000000000000000000000000000000000000000000000014
+			000000000000000000000000ecfcab0a285d3380e488a39b4bb21e777f8a4eac
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000020
+			000000000000000000000000f17f52151ebef6c7334fad080c5704d77216b732
+		"
+		);
+		let address = Token::Address([0x11u8; 20].into());
+		let bytes = Token::Bytes(parameter.to_vec());
+		let uint1 = Token::Uint(0.into());
+		let uint2 = Token::Uint(10000.into());
+		let expected = vec![
+			address,
+			bytes,
+			Token::Tuple(vec![uint1, uint2]),
+		];
+		let decoded = decode(
+			&[
+				ParamType::Address,
+				ParamType::Bytes,
+				ParamType::Tuple(vec![ParamType::Uint(256), ParamType::Uint(256)]),
+			],
+			&encoded,
+		)
+		.unwrap();
+		assert_eq!(decoded, expected);
+	}
+
 }
