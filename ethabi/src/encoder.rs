@@ -670,5 +670,29 @@ mod tests {
 		.to_vec();
 		assert_eq!(encoded, expected);
 	}
-}
 
+	/// https://github.com/cryptoeconomicslab/ethabi/issues/1
+	#[test]
+	fn encode_tuple_bytes() {
+		let address = Token::Address([0x11u8; 20].into());
+		let bytes = Token::Bytes(b"data"[..].into());
+		let uint1 = Token::Uint(0.into());
+		let uint2 = Token::Uint(100.into());
+		let tuple = Token::Tuple(vec![address, bytes]);
+		let range = Token::Tuple(vec![uint1, uint2]);
+		let encoded = encode(&vec![tuple, range]);
+		let expected = hex!(
+			"
+			0000000000000000000000001111111111111111111111111111111111111111
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000000
+			0000000000000000000000000000000000000000000000000000000000000064
+			0000000000000000000000000000000000000000000000000000000000000004
+			6461746100000000000000000000000000000000000000000000000000000000
+		"
+		)
+		.to_vec();
+		assert_eq!(encoded, expected);
+	}
+	
+}
