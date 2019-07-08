@@ -80,3 +80,44 @@ mod tests {
 		assert_eq!(encoded, expected);
 	}
 }
+
+
+#[test]
+fn test_function_encode_call_with_tuple() {
+	let interface = Function {
+		name: "hello".to_owned(),
+		inputs: vec![
+			Param {
+				name: "foo".to_owned(),
+				kind: ParamType::Tuple(vec![
+					ParamType::Bool,
+					ParamType::Bytes
+				]),
+				components: vec![
+					Param {
+						name: "bar".to_owned(),
+						kind: ParamType::Bool,
+						components: vec![],
+					},
+					Param {
+						name: "baz".to_owned(),
+						kind: ParamType::Bytes,
+						components: vec![],
+					},
+				],
+			},
+		],
+		outputs: vec![],
+		constant: false,
+	};
+
+	let func = Function::from(interface);
+	let encoded = func
+		.encode_input(&[Token::Tuple(vec![
+			Token::Bool(true),
+			Token::Bytes(vec![])
+		])])
+		.unwrap();
+	let expected = hex!("869865ad000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000").to_vec();
+	assert_eq!(encoded, expected);
+}
