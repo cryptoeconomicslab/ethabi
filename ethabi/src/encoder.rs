@@ -37,7 +37,7 @@ enum Mediate {
 	Prefixed(Vec<[u8; 32]>),
 	FixedArray(Vec<Mediate>),
 	Array(Vec<Mediate>),
-	Tuple(Vec<Mediate>),
+	Tuple(Vec<Mediate>, bool), // children: Vec<Mediate>, is_dynamic: bool
 }
 
 impl Mediate {
@@ -45,9 +45,10 @@ impl Mediate {
 		match *self {
 			Mediate::Raw(ref raw) => 32 * raw.len() as u32,
 			Mediate::Prefixed(_) => 32,
-			Mediate::FixedArray(ref nes) | Mediate::Tuple(ref nes) => {
+			Mediate::FixedArray(ref nes) | Mediate::Tuple(ref nes, false) => {
 				nes.iter().fold(0, |acc, m| acc + m.init_len())
-			}
+			},
+			Mediate::Tuple(_, true) => 32,
 			Mediate::Array(_) => 32,
 		}
 	}
@@ -56,7 +57,7 @@ impl Mediate {
 		match *self {
 			Mediate::Raw(_) => 0,
 			Mediate::Prefixed(ref pre) => pre.len() as u32 * 32,
-			Mediate::FixedArray(ref nes) | Mediate::Tuple(ref nes) => {
+			Mediate::FixedArray(ref nes) | Mediate::Tuple(ref nes, _) => {
 				nes.iter().fold(0, |acc, m| acc + m.closing_len())
 			}
 			Mediate::Array(ref nes) => nes
@@ -77,12 +78,12 @@ impl Mediate {
 	fn init(&self, suffix_offset: u32) -> Vec<[u8; 32]> {
 		match *self {
 			Mediate::Raw(ref raw) => raw.clone(),
-			Mediate::FixedArray(ref nes) | Mediate::Tuple(ref nes) => nes
+			Mediate::FixedArray(ref nes) | Mediate::Tuple(ref nes, false) => nes
 				.iter()
 				.enumerate()
 				.flat_map(|(i, m)| m.init(Mediate::offset_for(nes, i)))
 				.collect(),
-			Mediate::Prefixed(_) | Mediate::Array(_) => vec![pad_u32(suffix_offset)],
+			Mediate::Prefixed(_) | Mediate::Array(_) | Mediate::Tuple(_, true) => vec![pad_u32(suffix_offset)],
 		}
 	}
 
@@ -90,11 +91,10 @@ impl Mediate {
 		match *self {
 			Mediate::Raw(_) => vec![],
 			Mediate::Prefixed(ref pre) => pre.clone(),
-			Mediate::FixedArray(ref nes) | Mediate::Tuple(ref nes) => {
+			Mediate::FixedArray(ref nes) | Mediate::Tuple(ref nes, false) => {
 				// offset is not taken into account, cause it would be counted twice
 				// fixed array is just raw representations of similar consecutive items
-				nes
-					.iter()
+				nes.iter()
 					.enumerate()
 					.flat_map(|(i, m)| m.closing(Mediate::offset_for(nes, i)))
 					.collect()
@@ -114,6 +114,19 @@ impl Mediate {
 					.flat_map(|(i, m)| m.closing(offset + Mediate::offset_for(nes, i)));
 
 				prefix.chain(inits).chain(closings).collect()
+			},
+			Mediate::Tuple(ref nes, true) => {
+				let inits = nes
+					.iter()
+					.enumerate()
+					.flat_map(|(i, m)| m.init(Mediate::offset_for(nes, i)));
+
+				let closings = nes
+					.iter()
+					.enumerate()
+					.flat_map(|(i, m)| m.closing(offset + Mediate::offset_for(nes, i)));
+
+				inits.chain(closings).collect()
 			}
 		}
 	}
@@ -169,9 +182,11 @@ fn encode_token(token: &Token) -> Mediate {
 			Mediate::FixedArray(mediates)
 		}
 		Token::Tuple(ref tokens) => {
-			let mediates = tokens.iter().map(encode_token).collect();
+			let mediates  = tokens.iter().map(encode_token).collect();
+			let dynamic = tokens.iter().any(Token::is_dynamic);
 
-			Mediate::Tuple(mediates)
+
+			Mediate::Tuple(mediates, dynamic)
 		}
 	}
 }
@@ -438,8 +453,9 @@ mod tests {
 
 	#[test]
 	fn encode_bytes2() {
-		let bytes =
-			Token::Bytes(hex!("10000000000000000000000000000000000000000000000000000000000002").to_vec());
+		let bytes = Token::Bytes(
+			hex!("10000000000000000000000000000000000000000000000000000000000002").to_vec(),
+		);
 		let encoded = encode(&vec![bytes]);
 		let expected = hex!(
 			"
@@ -478,8 +494,9 @@ mod tests {
 
 	#[test]
 	fn encode_two_bytes() {
-		let bytes1 =
-			Token::Bytes(hex!("10000000000000000000000000000000000000000000000000000000000002").to_vec());
+		let bytes1 = Token::Bytes(
+			hex!("10000000000000000000000000000000000000000000000000000000000002").to_vec(),
+		);
 		let bytes2 = Token::Bytes(
 			hex!("0010000000000000000000000000000000000000000000000000000000000002").to_vec(),
 		);
@@ -670,5 +687,43 @@ mod tests {
 		.to_vec();
 		assert_eq!(encoded, expected);
 	}
-}
 
+	#[test]
+	fn encode_dynamic_tuple() {
+		let address = Token::Address([0x11u8; 20].into());
+		let bytes = Token::Bytes(vec![]);
+		let tuple = Token::Tuple(vec![address, bytes]);
+		let encoded = encode(&vec![tuple]);
+		let expected = hex!(
+			"
+			0000000000000000000000000000000000000000000000000000000000000020
+			0000000000000000000000001111111111111111111111111111111111111111
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000000
+		"
+		)
+		.to_vec();
+		assert_eq!(encoded, expected);
+	}
+
+	#[test]
+	fn encode_nested_tuple() {
+		let address = Token::Address([0x11u8; 20].into());
+		let bytes = Token::Bytes(vec![]);
+		let tuple = Token::Tuple(vec![address, bytes]);
+		let uint = Token::Uint(9487.into());
+		let encoded = encode(&vec![uint, tuple]);
+		let expected = hex!(
+			"
+			000000000000000000000000000000000000000000000000000000000000250f
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000001111111111111111111111111111111111111111
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000000
+		"
+		)
+		.to_vec();
+		assert_eq!(encoded, expected);
+
+	}
+}
