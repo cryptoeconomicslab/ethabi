@@ -93,8 +93,7 @@ impl Mediate {
 			Mediate::FixedArray(ref nes) | Mediate::Tuple(ref nes) => {
 				// offset is not taken into account, cause it would be counted twice
 				// fixed array is just raw representations of similar consecutive items
-				nes
-					.iter()
+				nes.iter()
 					.enumerate()
 					.flat_map(|(i, m)| m.closing(Mediate::offset_for(nes, i)))
 					.collect()
@@ -438,8 +437,9 @@ mod tests {
 
 	#[test]
 	fn encode_bytes2() {
-		let bytes =
-			Token::Bytes(hex!("10000000000000000000000000000000000000000000000000000000000002").to_vec());
+		let bytes = Token::Bytes(
+			hex!("10000000000000000000000000000000000000000000000000000000000002").to_vec(),
+		);
 		let encoded = encode(&vec![bytes]);
 		let expected = hex!(
 			"
@@ -478,8 +478,9 @@ mod tests {
 
 	#[test]
 	fn encode_two_bytes() {
-		let bytes1 =
-			Token::Bytes(hex!("10000000000000000000000000000000000000000000000000000000000002").to_vec());
+		let bytes1 = Token::Bytes(
+			hex!("10000000000000000000000000000000000000000000000000000000000002").to_vec(),
+		);
 		let bytes2 = Token::Bytes(
 			hex!("0010000000000000000000000000000000000000000000000000000000000002").to_vec(),
 		);
@@ -670,5 +671,43 @@ mod tests {
 		.to_vec();
 		assert_eq!(encoded, expected);
 	}
-}
 
+	#[test]
+	fn encode_dynamic_tuple() {
+		let address = Token::Address([0x11u8; 20].into());
+		let bytes = Token::Bytes(vec![]);
+		let tuple = Token::Tuple(vec![address, bytes]);
+		let encoded = encode(&vec![tuple]);
+		let expected = hex!(
+			"
+			0000000000000000000000000000000000000000000000000000000000000020
+			0000000000000000000000001111111111111111111111111111111111111111
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000000
+		"
+		)
+		.to_vec();
+		assert_eq!(encoded, expected);
+	}
+
+	#[test]
+	fn encode_nested_tuple() {
+		let address = Token::Address([0x11u8; 20].into());
+		let bytes = Token::Bytes(vec![]);
+		let tuple = Token::Tuple(vec![address, bytes]);
+		let uint = Token::Uint(9487.into());
+		let encoded = encode(&vec![uint, tuple]);
+		let expected = hex!(
+			"
+			000000000000000000000000000000000000000000000000000000000000250f
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000001111111111111111111111111111111111111111
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000000
+		"
+		)
+		.to_vec();
+		assert_eq!(encoded, expected);
+
+	}
+}
