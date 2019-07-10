@@ -182,7 +182,10 @@ mod tests {
 			inputs: vec![
 				Param {
 					name: "range".to_owned(),
-					kind: ParamType::Tuple(vec![]),
+					kind: ParamType::Tuple(vec![
+						ParamType::Uint(256),
+						ParamType::Uint(256),
+					]),
 					components: vec![
 						Param {
 							name: "start".to_owned(),
