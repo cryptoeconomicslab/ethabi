@@ -134,8 +134,14 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize, frame: us
 			Ok(result)
 		},
 		ParamType::Bytes => {
+			println!("Offset: {}", offset);
+			println!("Data: {:?}", slices);
 			let offset_slice = try!(peek(slices, offset));
+			// println!("Bytes: {:?}", offset_slice);
+			// println!("Hi2");
 			let len_offset = ((try!(as_u32(offset_slice)) / 32) as usize) + frame;
+
+			println!("Bytes: {}", len_offset);
 
 			let len_slice = try!(peek(slices, len_offset));
 			let len = try!(as_u32(len_slice)) as usize;
@@ -205,21 +211,51 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize, frame: us
 			Ok(result)
 		}
 		ParamType::Tuple(ref params) => {
+			println!("{:?}", slices);
 			let mut tokens = vec![];
 			let mut new_offset = offset;
-			for param in params.iter() {
-				let res = decode_param(param, &slices, new_offset, new_offset + 1)?;
-				new_offset = res.new_offset;
-				tokens.push(res.token);
-			}
 
+			if param.is_dynamic() {
+				println!("I am Dynamic tuple");
+				let offset_slice = try!(peek(slices, offset)); // offset to tail of dynamic tuple
+				let len_offset = (try!(as_u32(offset_slice)) / 32) as usize; 
+				let mut offset = offset + len_offset; // offset to dynamic tuple
+				println!("{:?}, {}, {}", offset_slice, len_offset, offset);
+
+				for param in params.iter() {
+					if param.is_dynamic() {
+						println!("Dynamic param");
+						let offset_slice = try!(peek(slices, offset));
+						let len_offset = (try!(as_u32(offset_slice)) / 32) as usize;
+						let res = decode_param(param, &slices, offset, 0)?;
+						println!("{:?}", res.token);
+						offset += 1;
+						tokens.push(res.token);
+					} else {
+						println!("Not Dynamic param");
+						let res = decode_param(param, &slices, offset, 0)?;
+						println!("{:?}", res.token);
+						offset = res.new_offset;
+						tokens.push(res.token);
+					}
+				}
+
+				new_offset += 1;
+			} else {
+				for param in params.iter() {
+					let res = decode_param(param, &slices, new_offset, 0)?;
+					new_offset = res.new_offset;
+					tokens.push(res.token);
+				}
+			}
+	
 			let result = DecodeResult {
 				token: Token::Tuple(tokens),
 				new_offset,
 			};
 
 			Ok(result)
-		},
+		}
 	}
 }
 
@@ -508,6 +544,22 @@ mod tests {
 	}
 
 	#[test]
+	fn decode_string_and_uint() {
+		let encoded = hex!("
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000001
+			0000000000000000000000000000000000000000000000000000000000000001
+			6100000000000000000000000000000000000000000000000000000000000000
+		");
+		let s = Token::String("a".to_owned());
+		let uint = Token::Uint(1.into());
+		let expected = vec![s, uint];
+		let decoded = decode(&[ParamType::String, ParamType::Uint(256)], &encoded).unwrap();
+		assert_eq!(decoded, expected);
+	}
+
+
+	#[test]
 	fn decode_from_empty_byte_slice() {
 		// these can NOT be decoded from empty byte slice
 		assert!(decode(&[ParamType::Address], &[]).is_err());
@@ -570,28 +622,25 @@ mod tests {
 	fn decode_tuple_bytes() {
 		let encoded = hex!(
 			"
-			0000000000000000000000000000000000000000000000000000000000000060
-			0000000000000000000000000000000000000000000000000000000000000000
-			0000000000000000000000000000000000000000000000000000000000000064
-			0000000000000000000000001111111111111111111111111111111111111111
 			0000000000000000000000000000000000000000000000000000000000000040
-			0000000000000000000000000000000000000000000000000000000000000004
-			6461746100000000000000000000000000000000000000000000000000000000
+			0000000000000000000000000000000000000000000000000000000000000001
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000001
+			0000000000000000000000000000000000000000000000000000000000000001
+			6100000000000000000000000000000000000000000000000000000000000000
 			"
 		);
 
-		let address = Token::Address([0x11u8; 20].into());
-		let bytes = Token::Bytes(b"data"[..].into());
-		let uint1 = Token::Uint(0.into());
-		let uint2 = Token::Uint(100.into());
+		let uint = Token::Uint(1.into());
+		let string = Token::String("a".to_owned());
 		let expected = vec![
-			Token::Tuple(vec![address, bytes]),
-			Token::Tuple(vec![uint1, uint2]),
+			Token::Tuple(vec![string, uint]),
+			Token::Uint(1.into())
 		];
 		let decoded = decode(
 			&[
-				ParamType::Tuple(vec![ParamType::Address, ParamType::Bytes]),
-				ParamType::Tuple(vec![ParamType::Uint(256), ParamType::Uint(256)]),
+				ParamType::Tuple(vec![ParamType::String, ParamType::Uint(256)]),
+				ParamType::Uint(256),
 			],
 			&encoded,
 		)

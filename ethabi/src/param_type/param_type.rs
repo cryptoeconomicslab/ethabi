@@ -44,6 +44,17 @@ impl ParamType {
             _ => false,
         }
     }
+
+	/// Check if the ParamType is dynamic.
+	pub fn is_dynamic(&self) -> bool {
+		match self {
+			ParamType::Bytes => true,
+			ParamType::Array(_) => true,
+			ParamType::String => true,
+			ParamType::Tuple(params) => params.iter().any(ParamType::is_dynamic),
+			_ => false,
+		}
+	}
 }
 
 #[cfg(test)]
