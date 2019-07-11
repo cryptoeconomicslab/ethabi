@@ -6,6 +6,7 @@ use {Token, ErrorKind, Error, ResultExt, ParamType};
 struct DecodeResult {
 	token: Token,
 	new_offset: usize,
+	tail_consumed: usize,
 }
 
 struct BytesTaken {
@@ -87,6 +88,7 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 			let result = DecodeResult {
 				token: Token::Address(address.into()),
 				new_offset: offset + 1,
+				tail_consumed: 0,
 			};
 
 			Ok(result)
@@ -97,6 +99,7 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 			let result = DecodeResult {
 				token: Token::Int(slice.clone().into()),
 				new_offset: offset + 1,
+				tail_consumed: 0,
 			};
 
 			Ok(result)
@@ -107,6 +110,7 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 			let result = DecodeResult {
 				token: Token::Uint(slice.clone().into()),
 				new_offset: offset + 1,
+				tail_consumed: 0,
 			};
 
 			Ok(result)
@@ -119,6 +123,7 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 			let result = DecodeResult {
 				token: Token::Bool(b),
 				new_offset: offset + 1,
+				tail_consumed: 0,
 			};
 
 			Ok(result)
@@ -129,6 +134,7 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 			let result = DecodeResult {
 				token: Token::FixedBytes(taken.bytes),
 				new_offset: taken.new_offset,
+				tail_consumed: 0,
 			};
 
 			Ok(result)
@@ -145,6 +151,7 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 			let result = DecodeResult {
 				token: Token::Bytes(taken.bytes),
 				new_offset: offset + 1,
+				tail_consumed: len % 32 + 1,
 			};
 
 			Ok(result)
@@ -161,6 +168,7 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 			let result = DecodeResult {
 				token: Token::String(try!(String::from_utf8(taken.bytes))),
 				new_offset: offset + 1,
+				tail_consumed: 0,
 			};
 
 			Ok(result)
@@ -184,6 +192,7 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 			let result = DecodeResult {
 				token: Token::Array(tokens),
 				new_offset: offset + 1,
+				tail_consumed: 0,
 			};
 
 			Ok(result)
@@ -200,22 +209,51 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 			let result = DecodeResult {
 				token: Token::FixedArray(tokens),
 				new_offset,
+				tail_consumed: 0,
 			};
 
 			Ok(result)
 		}
 		ParamType::Tuple(ref params) => {
 			let mut tokens = vec![];
-			let mut new_offset = offset;
-			for param in params.iter() {
-				let res = decode_param(param, &slices, new_offset)?;
-				new_offset = res.new_offset;
-				tokens.push(res.token);
+			let mut new_offset;
+
+			if param.is_dynamic() {
+				let offset_slice = try!(peek(slices, offset));
+				let len_offset = (try!(as_u32(offset_slice)) / 32) as usize;
+				let tail_slices = &slices[len_offset..];
+
+				let mut dynamic_offset = 0;
+				let mut tail_consumed = 0; // storing dynamic type's tail size.
+
+				new_offset = offset + len_offset;
+				for param in params.iter() {
+					if param.is_dynamic() {
+						let res = decode_param(param, tail_slices, dynamic_offset)?;
+						dynamic_offset += 1;
+						tokens.push(res.token);
+						tail_consumed += res.tail_consumed;
+					} else {
+						let res = decode_param(param, tail_slices, dynamic_offset)?;
+						dynamic_offset = res.new_offset;
+						tokens.push(res.token);
+					}
+				}
+
+				new_offset += tail_consumed + dynamic_offset;
+			} else {
+				new_offset = offset;
+				for param in params.iter() {
+					let res = decode_param(param, &slices, new_offset)?;
+					new_offset = res.new_offset;
+					tokens.push(res.token);
+				}
 			}
 
 			let result = DecodeResult {
 				token: Token::Tuple(tokens),
 				new_offset,
+				tail_consumed: 0,
 			};
 
 			Ok(result)
@@ -538,6 +576,99 @@ mod tests {
 		let expected = vec![Token::Tuple(vec![address, uint])];
 		let decoded = decode(&[ParamType::Tuple(vec![ParamType::Address, ParamType::Uint(256)])], &encoded).unwrap();
 		assert_eq!(decoded, expected);
+	}
+
+	#[test]
+	fn decode_dynamic_tuple() {
+		let encoded = hex!(
+			"
+			0000000000000000000000000000000000000000000000000000000000000020
+			0000000000000000000000000000000000000000000000000000000000000001
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000004
+			6461746100000000000000000000000000000000000000000000000000000000
+			"
+		);
+
+		let uint1 = Token::Uint(1.into());
+		let bytes = Token::Bytes(b"data"[..].into());
+		let expected = vec![
+			Token::Tuple(vec![uint1, bytes])
+		];
+
+		let decoded = decode(
+			&[ParamType::Tuple(vec![ParamType::Uint(256), ParamType::Bytes])],
+			&encoded
+		).unwrap();
+		assert_eq!(decoded, expected);
+	}
+
+	#[test]
+	fn decode_uint_and_dynamic_tuple() {
+		let encoded = hex!(
+			"
+			000000000000000000000000000000000000000000000000000000000000250f
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000001111111111111111111111111111111111111111
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000004
+			6461746100000000000000000000000000000000000000000000000000000000
+		"
+		);
+
+		let address = Token::Address([0x11u8; 20].into());
+		let bytes = Token::Bytes(b"data"[..].into());
+		let tuple = Token::Tuple(vec![address, bytes]);
+		let uint = Token::Uint(9487.into());
+
+		let expected = vec![
+			uint,
+			tuple
+		];
+
+		let decoded = decode(
+			&[
+				ParamType::Uint(256),
+				ParamType::Tuple(vec![ParamType::Address, ParamType::Bytes])
+			],
+			&encoded
+		).unwrap();
+
+		assert_eq!(decoded, expected);
+	}
+
+	#[test]
+	fn decode_nested_tuple() {
+		let encoded = hex!(
+			"
+			0000000000000000000000000000000000000000000000000000000000000020
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000001
+			0000000000000000000000000000000000000000000000000000000000000001
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000004
+			6461746100000000000000000000000000000000000000000000000000000000
+			"
+		);
+
+		let uint1 = Token::Uint(1.into());
+		let uint2 = Token::Uint(1.into());
+		let bytes = Token::Bytes(b"data"[..].into());
+		let tuple = Token::Tuple(vec![uint1, bytes]);
+
+		let expected = vec![
+			Token::Tuple(vec![tuple, uint2])
+		];
+
+		let decoded = decode(
+			&[
+				ParamType::Tuple(vec![ParamType::Tuple(vec![ParamType::Uint(256), ParamType::Bytes]), ParamType::Uint(256)])
+			],
+			&encoded
+		).unwrap();
+
+		assert_eq!(decoded, expected);
+
 	}
 }
 
