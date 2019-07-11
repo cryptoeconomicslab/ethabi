@@ -539,5 +539,64 @@ mod tests {
 		let decoded = decode(&[ParamType::Tuple(vec![ParamType::Address, ParamType::Uint(256)])], &encoded).unwrap();
 		assert_eq!(decoded, expected);
 	}
+
+	#[test]
+	fn decode_dynamic_tuple() {
+		let encoded = hex!(
+			"
+			0000000000000000000000000000000000000000000000000000000000000020
+			0000000000000000000000000000000000000000000000000000000000000001
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000004
+			6461746100000000000000000000000000000000000000000000000000000000
+			"
+		);
+
+		let uint1 = Token::Uint(1.into());
+		let bytes = Token::Bytes(b"data"[..].into());
+		let expected = vec![
+			Token::Tuple(vec![uint1, bytes])
+		];
+
+		let decoded = decode(
+			&[ParamType::Tuple(vec![ParamType::Uint(256), ParamType::Bytes])],
+			&encoded
+		).unwrap();
+		assert_eq!(decoded, expected);
+	}
+
+	#[test]
+	fn decode_nested_tuple() {
+		let encoded = hex!(
+			"
+			000000000000000000000000000000000000000000000000000000000000250f
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000001111111111111111111111111111111111111111
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000004
+			6461746100000000000000000000000000000000000000000000000000000000
+		"
+		);
+
+		let address = Token::Address([0x11u8; 20].into());
+		let bytes = Token::Bytes(b"data"[..].into());
+		let tuple = Token::Tuple(vec![address, bytes]);
+		let uint = Token::Uint(9487.into());
+
+		let expected = vec![
+			uint,
+			tuple
+		];
+
+		let decoded = decode(
+			&[
+				ParamType::Uint(256),
+				ParamType::Tuple(vec![ParamType::Address, ParamType::Bytes])
+			],
+			&encoded
+		).unwrap();
+
+		assert_eq!(decoded, expected);
+	}
 }
 
