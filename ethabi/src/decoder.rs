@@ -219,7 +219,6 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 			let mut new_offset;
 
 			if param.is_dynamic() {
-				println!("{:?}", slices);
 				let offset_slice = try!(peek(slices, offset));
 				let len_offset = (try!(as_u32(offset_slice)) / 32) as usize;
 				let tail_slices = &slices[len_offset..];
