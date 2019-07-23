@@ -217,6 +217,7 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 		ParamType::Tuple(ref params) => {
 			let mut tokens = vec![];
 			let mut new_offset;
+			let mut tail_consumed = 0; // storing dynamic type's tail size.
 
 			if param.is_dynamic() {
 				let offset_slice = try!(peek(slices, offset));
@@ -224,9 +225,8 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 				let tail_slices = &slices[len_offset..];
 
 				let mut dynamic_offset = 0;
-				let mut tail_consumed = 0; // storing dynamic type's tail size.
 
-				new_offset = offset + len_offset;
+				new_offset = offset + 1;
 				for param in params.iter() {
 					if param.is_dynamic() {
 						let res = decode_param(param, tail_slices, dynamic_offset)?;
@@ -239,8 +239,6 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 						tokens.push(res.token);
 					}
 				}
-
-				new_offset += tail_consumed + dynamic_offset;
 			} else {
 				new_offset = offset;
 				for param in params.iter() {
@@ -253,7 +251,7 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 			let result = DecodeResult {
 				token: Token::Tuple(tokens),
 				new_offset,
-				tail_consumed: 0,
+				tail_consumed,
 			};
 
 			Ok(result)
@@ -604,6 +602,34 @@ mod tests {
 	}
 
 	#[test]
+	fn decode_dynamic_tuple2() {
+		let encoded = hex!(
+			"
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000001
+			0000000000000000000000000000000000000000000000000000000000000001
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000004
+			6461746100000000000000000000000000000000000000000000000000000000
+			"
+		);
+
+		let uint1 = Token::Uint(1.into());
+		let uint2 = Token::Uint(1.into());
+		let bytes = Token::Bytes(b"data"[..].into());
+		let expected = vec![
+			Token::Tuple(vec![uint1, bytes]),
+			uint2
+		];
+
+		let decoded = decode(
+			&[ParamType::Tuple(vec![ParamType::Uint(256), ParamType::Bytes]), ParamType::Uint(256)],
+			&encoded
+		).unwrap();
+		assert_eq!(decoded, expected);
+	}
+
+	#[test]
 	fn decode_uint_and_dynamic_tuple() {
 		let encoded = hex!(
 			"
@@ -704,7 +730,7 @@ mod tests {
 	}
 
 	#[test]
-	fn encode_tuple_pattern2() {
+	fn decode_tuple_pattern2() {
 		let address = Token::Address([0x11u8; 20].into());
 		let bytes = Token::Bytes(vec![0x30u8, 0x31u8, 0x32u8, 0x33u8]);
 		let state_object = Token::Tuple(vec![address, bytes]);
