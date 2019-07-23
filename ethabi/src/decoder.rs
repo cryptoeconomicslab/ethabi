@@ -217,6 +217,7 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 		ParamType::Tuple(ref params) => {
 			let mut tokens = vec![];
 			let mut new_offset;
+			let mut tail_consumed = 0; // storing dynamic type's tail size.
 
 			if param.is_dynamic() {
 				let offset_slice = try!(peek(slices, offset));
@@ -224,9 +225,8 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 				let tail_slices = &slices[len_offset..];
 
 				let mut dynamic_offset = 0;
-				let mut tail_consumed = 0; // storing dynamic type's tail size.
 
-				new_offset = offset + len_offset;
+				new_offset = offset + 1;
 				for param in params.iter() {
 					if param.is_dynamic() {
 						let res = decode_param(param, tail_slices, dynamic_offset)?;
@@ -239,8 +239,6 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 						tokens.push(res.token);
 					}
 				}
-
-				new_offset += tail_consumed + dynamic_offset;
 			} else {
 				new_offset = offset;
 				for param in params.iter() {
@@ -253,7 +251,7 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 			let result = DecodeResult {
 				token: Token::Tuple(tokens),
 				new_offset,
-				tail_consumed: 0,
+				tail_consumed,
 			};
 
 			Ok(result)
@@ -604,6 +602,34 @@ mod tests {
 	}
 
 	#[test]
+	fn decode_dynamic_tuple2() {
+		let encoded = hex!(
+			"
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000001
+			0000000000000000000000000000000000000000000000000000000000000001
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000004
+			6461746100000000000000000000000000000000000000000000000000000000
+			"
+		);
+
+		let uint1 = Token::Uint(1.into());
+		let uint2 = Token::Uint(1.into());
+		let bytes = Token::Bytes(b"data"[..].into());
+		let expected = vec![
+			Token::Tuple(vec![uint1, bytes]),
+			uint2
+		];
+
+		let decoded = decode(
+			&[ParamType::Tuple(vec![ParamType::Uint(256), ParamType::Bytes]), ParamType::Uint(256)],
+			&encoded
+		).unwrap();
+		assert_eq!(decoded, expected);
+	}
+
+	#[test]
 	fn decode_uint_and_dynamic_tuple() {
 		let encoded = hex!(
 			"
@@ -670,5 +696,87 @@ mod tests {
 		assert_eq!(decoded, expected);
 
 	}
+
+	#[test]
+	fn decode_tuple_pattern1() {
+		let address = Token::Address([0x11u8; 20].into());
+		let bytes = Token::Bytes(vec![0x30u8, 0x31u8, 0x32u8, 0x33u8]);
+		let tuple = Token::Tuple(vec![address, bytes]);
+		let uint1 = Token::Uint(25.into());
+		let uint2 = Token::Uint(30.into());
+		let expected = vec![tuple, uint1, uint2];
+		let encoded = hex!(
+			"
+			0000000000000000000000000000000000000000000000000000000000000060
+			0000000000000000000000000000000000000000000000000000000000000019
+			000000000000000000000000000000000000000000000000000000000000001e
+			0000000000000000000000001111111111111111111111111111111111111111
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000004
+			3031323300000000000000000000000000000000000000000000000000000000
+		"
+		)
+		.to_vec();
+		let decoded = decode(
+			&[
+				ParamType::Tuple(vec![ParamType::Address, ParamType::Bytes]),
+				ParamType::Uint(256),
+				ParamType::Uint(256)
+			],
+			&encoded
+		).unwrap();
+
+		assert_eq!(decoded, expected);
+	}
+
+	#[test]
+	fn decode_tuple_pattern2() {
+		let address = Token::Address([0x11u8; 20].into());
+		let bytes = Token::Bytes(vec![0x30u8, 0x31u8, 0x32u8, 0x33u8]);
+		let state_object = Token::Tuple(vec![address, bytes]);
+		let state_update_range_start = Token::Uint(15.into());
+		let state_update_range_end = Token::Uint(16.into());
+		let state_update_range = Token::Tuple(vec![state_update_range_start, state_update_range_end]);
+		let block_number = Token::Uint(25.into());
+		let plasma_address = Token::Address([0x22u8; 20].into());
+		let state_update = Token::Tuple(vec![state_object, state_update_range, block_number, plasma_address]);
+		let range_start = Token::Uint(0.into());
+		let range_end = Token::Uint(100.into());
+		let range = Token::Tuple(vec![range_start, range_end]);
+		let expected = vec![state_update, range];
+		let encoded = hex!(
+			"
+			0000000000000000000000000000000000000000000000000000000000000060
+			0000000000000000000000000000000000000000000000000000000000000000
+			0000000000000000000000000000000000000000000000000000000000000064
+			00000000000000000000000000000000000000000000000000000000000000a0
+			000000000000000000000000000000000000000000000000000000000000000f
+			0000000000000000000000000000000000000000000000000000000000000010
+			0000000000000000000000000000000000000000000000000000000000000019
+			0000000000000000000000002222222222222222222222222222222222222222
+			0000000000000000000000001111111111111111111111111111111111111111
+			0000000000000000000000000000000000000000000000000000000000000040
+			0000000000000000000000000000000000000000000000000000000000000004
+			3031323300000000000000000000000000000000000000000000000000000000
+		"
+		)
+		.to_vec();
+		let decoded = decode(
+			&[
+				ParamType::Tuple(vec![
+					ParamType::Tuple(vec![ParamType::Address, ParamType::Bytes]),
+					ParamType::Tuple(vec![ParamType::Uint(256), ParamType::Uint(256)]),
+					ParamType::Uint(256),
+					ParamType::Address,
+				]),
+				ParamType::Tuple(vec![ParamType::Uint(256), ParamType::Uint(256)])
+			],
+			&encoded
+		).unwrap();
+
+		assert_eq!(decoded, expected);
+	}
+
+
 }
 
